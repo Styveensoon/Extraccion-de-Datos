@@ -1,7 +1,16 @@
 # 🦠 COVID-19 Sonora — ETL Pipeline
+
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
+![Polars](https://img.shields.io/badge/Polars-0.20+-CD792C?style=flat-square&logo=polars&logoColor=white)
+![ClickHouse](https://img.shields.io/badge/ClickHouse-24+-FFCC01?style=flat-square&logo=clickhouse&logoColor=black)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
+![License](https://img.shields.io/badge/Datos-Dominio%20Público%20SSA-green?style=flat-square)
+
 ### Polars · ClickHouse · SSA Open Data · 2020–2026
 
-> Pipeline ETL para procesamiento y análisis de datos epidemiológicos de COVID-19 filtrados para el estado de Sonora, México. ~20 millones de registros nacionales → ~850,000 registros limpios de Sonora.
+> Pipeline ETL para procesamiento y análisis de datos epidemiológicos de COVID-19
+> filtrados para el estado de Sonora, México.
+> **~20 millones de registros nacionales → ~850,000 registros limpios de Sonora.**
 
 ```
 SSA Open Data (~20M rows)
@@ -25,12 +34,12 @@ SSA Open Data (~20M rows)
 covid19-sonora-etl/
 │
 ├── data/
-│   ├── backup_lote1/
-│   │   └── backup_sonora_YYYYMMDD_HHMMSS.csv    # Backup automático lote 1
-│   └── backup_lote2/
-│       └── backup_sonora_YYYYMMDD_HHMMSS.csv    # Backup automático lote 2
+│   ├── backup_lote1/          # ⚠️ Vacía — se genera al correr script_polars_lote1.py
+│   │   └── backup_sonora_YYYYMMDD_HHMMSS.csv
+│   └── backup_lote2/          # ⚠️ Vacía — se genera al correr script_polars_lote2.py
+│       └── backup_sonora_YYYYMMDD_HHMMSS.csv
 │
-├── data_lote1/                                   # CSVs sin espacio en nombre
+├── data_lote1/                # ⚠️ Vacía — coloca aquí los CSVs sin espacio en nombre
 │   ├── COVID19MEXICO2020.csv
 │   ├── COVID19MEXICO2021.csv
 │   ├── COVID19MEXICO2022.csv
@@ -39,7 +48,7 @@ covid19-sonora-etl/
 │   ├── COVID19MEXICO2025.csv
 │   └── COVID19MEXICO2026.csv
 │
-├── data_lote2/                                   # CSVs con espacio en nombre
+├── data_lote2/                # ⚠️ Vacía — coloca aquí los CSVs con espacio en nombre
 │   ├── COVID19MEXICO 2020.csv
 │   ├── COVID19MEXICO 2021.csv
 │   ├── COVID19MEXICO 2022.csv
@@ -49,47 +58,58 @@ covid19-sonora-etl/
 │   └── COVID19MEXICO 2026.csv
 │
 ├── scripts/
-│   ├── script_polars_lote1.py                    # ETL → covid_mx_lote1.sonora
-│   └── script_polars_lote2.py                    # ETL → covid_mx_lote2.sonora
+│   ├── script_polars_lote1.py     # ETL → covid_mx_lote1.sonora
+│   └── script_polars_lote2.py     # ETL → covid_mx_lote2.sonora
 │
-├── sql_querys/
-│   └── SONORA_ANALISIS.sql                       # Consultas analíticas ClickHouse
+├── sql_queries/
+│   └── SONORA_ANALISIS.sql        # Consultas analíticas ClickHouse
 │
-└── docker-compose.yml                            # ClickHouse local
+└── docker-compose.yml             # ClickHouse local
 ```
+
+> **Nota:** Las carpetas `data_lote1/`, `data_lote2/` y `data/backup_*/` se incluyen
+> vacías en el repositorio. Los archivos CSV no se suben por su tamaño (~20M registros),
+> pero son de **dominio público** y pueden descargarse directamente de la fuente oficial:
+>
+> 📥 **[SSA México — Datos Abiertos COVID-19](https://www.gob.mx/salud/documentos/datos-abiertos-152127)**
 
 ---
 
 ## 🛠 Stack Tecnológico
 
-| Componente | Tecnología | Rol |
-|---|---|---|
-| Procesamiento | Python 3.11+ + Polars 0.20+ | ETL, limpieza, homologación de catálogos |
-| Almacenamiento | ClickHouse 24+ | OLAP columnar, consultas analíticas |
-| Conector | clickhouse-connect 0.7+ | Inserción Arrow → ClickHouse |
-| Infraestructura | Docker + docker-compose | ClickHouse local reproducible |
-| Fuente | SSA Datos Abiertos | 7 CSVs anuales 2020–2026 |
+| Componente      | Tecnología                  | Rol                                      |
+| --------------- | --------------------------- | ---------------------------------------- |
+| Procesamiento   | Python 3.11+ + Polars 0.20+ | ETL, limpieza, homologación de catálogos |
+| Almacenamiento  | ClickHouse 24+              | OLAP columnar, consultas analíticas      |
+| Conector        | clickhouse-connect 0.7+     | Inserción Arrow → ClickHouse             |
+| Infraestructura | Docker + docker-compose     | ClickHouse local reproducible            |
+| Fuente          | SSA Datos Abiertos          | 7 CSVs anuales 2020–2026                 |
 
 ---
 
 ## ⚙️ Instalación
 
-### 1. Instalar dependencias
+### 1. Descargar los datos
+
+Los CSVs **no están incluidos** en el repositorio por su tamaño (~20M registros).
+Descárgalos desde la fuente oficial:
+
+📥 **[https://www.gob.mx/salud/documentos/datos-abiertos-152127](https://www.gob.mx/salud/documentos/datos-abiertos-152127)**
+
+Coloca los archivos en `data_lote1/` (sin espacio) o `data_lote2/` (con espacio) según corresponda.
+
+### 2. Instalar dependencias
 
 ```bash
 pip install polars clickhouse-connect pyarrow
 ```
 
-### 2. Levantar ClickHouse
+### 3. Levantar ClickHouse
 
 ```bash
 docker-compose up -d
 # Disponible en localhost:8123 (HTTP) y localhost:9000 (TCP)
 ```
-
-### 3. Colocar los CSVs
-
-Descargar desde [datos.gob.mx](https://datos.gob.mx/busca/dataset/informacion-referente-a-casos-covid-19-en-mexico) y colocar en `data_lote1/` o `data_lote2/` según corresponda.
 
 ---
 
@@ -104,7 +124,8 @@ python scripts/script_polars_lote2.py
 ```
 
 Cada script:
-1. Carga los 7 CSVs con evaluación lazy (Polars LazyFrame)
+
+1. Carga los 7 CSVs con evaluación lazy (Polars `LazyFrame`)
 2. Concatena con `diagonal_relaxed` para tolerar diferencias de esquema entre años
 3. Filtra por Sonora: `ENTIDAD_RES == 26 OR ENTIDAD_NAC == 26 OR ENTIDAD_UM == 26`
 4. Deduplica con `.unique()`
@@ -117,12 +138,13 @@ Cada script:
 
 ## 🗄️ Bases de Datos en ClickHouse
 
-| Base | Tabla | Script origen | Descripción |
-|---|---|---|---|
-| `covid_mx_lote1` | `sonora` | `script_polars_lote1.py` | Primera carga — CSVs sin espacio |
-| `covid_mx_lote2` | `sonora` | `script_polars_lote2.py` | Segunda carga — CSVs con espacio |
+| Base             | Tabla    | Script origen            | Descripción                        |
+| ---------------- | -------- | ------------------------ | ---------------------------------- |
+| `covid_mx_lote1` | `sonora` | `script_polars_lote1.py` | Primera carga — CSVs sin espacio   |
+| `covid_mx_lote2` | `sonora` | `script_polars_lote2.py` | Segunda carga — CSVs con espacio   |
 
-Ambas tablas tienen esquema idéntico inferido automáticamente desde los dtypes de Polars, con `ENGINE = MergeTree() ORDER BY tuple()`.
+Ambas tablas tienen esquema idéntico inferido automáticamente desde los dtypes de Polars,
+con `ENGINE = MergeTree() ORDER BY tuple()`.
 
 ### Validación cruzada entre lotes
 
@@ -136,18 +158,18 @@ SELECT 'covid_mx_lote2' AS base, COUNT(*) AS total FROM covid_mx_lote2.sonora;
 
 ## 🔑 Catálogos (FK → Valor)
 
-| Columna | Ejemplo FK | Valor resuelto |
-|---|---|---|
-| `ORIGEN` | `1` | `USMER` |
-| `SECTOR` | `4` | `IMSS` |
-| `SEXO` | `2` | `HOMBRE` |
-| `TIPO_PACIENTE` | `2` | `HOSPITALIZADO` |
-| `ENTIDAD_RES` | `26` | `SONORA` |
-| `CLASIFICACION_FINAL` | `3` | `CASO DE SARS-COV-2 CONFIRMADO` |
-| `RESULTADO_LAB` | `1` | `POSITIVO A SARS-COV-2` |
-| `DIABETES` / `HIPERTENSION` / `OBESIDAD` (y 17 más) | `1` / `2` / `97` | `SI` / `NO` / `null` |
+| Columna                                              | Ejemplo FK        | Valor resuelto                  |
+| ---------------------------------------------------- | ----------------- | ------------------------------- |
+| `ORIGEN`                                             | `1`               | `USMER`                         |
+| `SECTOR`                                             | `4`               | `IMSS`                          |
+| `SEXO`                                               | `2`               | `HOMBRE`                        |
+| `TIPO_PACIENTE`                                      | `2`               | `HOSPITALIZADO`                 |
+| `ENTIDAD_RES`                                        | `26`              | `SONORA`                        |
+| `CLASIFICACION_FINAL`                                | `3`               | `CASO DE SARS-COV-2 CONFIRMADO` |
+| `RESULTADO_LAB`                                      | `1`               | `POSITIVO A SARS-COV-2`         |
+| `DIABETES` / `HIPERTENSION` / `OBESIDAD` (y 17 más) | `1` / `2` / `97`  | `SI` / `NO` / `null`            |
 
-Los valores centinela `97`, `98` y `99` se convierten a `null` durante la homologación.
+> Los valores centinela `97`, `98` y `99` se convierten a `null` durante la homologación.
 
 ---
 
@@ -174,15 +196,19 @@ SELECT
     dateDiff('day', FECHA_INGRESO,  FECHA_DEF)     AS dias_hospitalizacion,
     dateDiff('day', FECHA_SINTOMAS, FECHA_DEF)     AS dias_total_enfermedad
 FROM covid_mx_lote2.sonora
-WHERE FECHA_SINTOMAS IS NOT NULL AND FECHA_INGRESO IS NOT NULL AND FECHA_DEF IS NOT NULL;
+WHERE FECHA_SINTOMAS IS NOT NULL
+  AND FECHA_INGRESO  IS NOT NULL
+  AND FECHA_DEF      IS NOT NULL;
 
 -- Tasa de mortalidad 2020 (población INEGI Censo 2020)
 SELECT
-    YEAR(FECHA_DEF) AS anio,
-    COUNT(*) AS total_muertes,
-    ROUND(COUNT(*) / 2944840 * 100, 4) AS tasa_general_pct
+    YEAR(FECHA_DEF)                          AS anio,
+    COUNT(*)                                 AS total_muertes,
+    ROUND(COUNT(*) / 2944840 * 100, 4)       AS tasa_general_pct
 FROM covid_mx_lote2.sonora
-WHERE ENTIDAD_RES = 'SONORA' AND FECHA_DEF IS NOT NULL AND YEAR(FECHA_DEF) = 2020
+WHERE ENTIDAD_RES = 'SONORA'
+  AND FECHA_DEF IS NOT NULL
+  AND YEAR(FECHA_DEF) = 2020
 GROUP BY YEAR(FECHA_DEF);
 ```
 
@@ -190,24 +216,24 @@ GROUP BY YEAR(FECHA_DEF);
 
 ## 📊 Métricas
 
-| Métrica | Valor |
-|---|---|
-| Registros nacionales procesados | ~20,000,000 |
-| Registros Sonora (post-filtro) | ~850,000 |
-| Pacientes fallecidos | ~38,000 |
-| Columnas por registro | 40 |
-| Duplicados eliminados | < 0.01% |
-| Catálogos homologados | 12 dimensiones |
-| Completitud post-limpieza | > 98% |
+| Métrica                          | Valor          |
+| -------------------------------- | -------------- |
+| Registros nacionales procesados  | ~20,000,000    |
+| Registros Sonora (post-filtro)   | ~850,000       |
+| Pacientes fallecidos             | ~38,000        |
+| Columnas por registro            | 40             |
+| Duplicados eliminados            | < 0.01%        |
+| Catálogos homologados            | 12 dimensiones |
+| Completitud post-limpieza        | > 98%          |
 
 ---
 
 ## 👤 Autor
 
-**Styveen Emiliano Rizo Hernández**  
-Ingeniería en Desarrollo y Gestión de Software Multiplataforma  
+**Styveen Emiliano Rizo Hernández**
+Ingeniería en Desarrollo y Gestión de Software Multiplataforma
 Universidad Tecnológica de Puebla · 9° Cuatrimestre · 2026
 
 ---
 
-<sub>Fuente de datos: <a href="https://datos.gob.mx/busca/dataset/informacion-referente-a-casos-covid-19-en-mexico">SSA México — datos.gob.mx</a> · Uso exclusivo académico</sub>
+Fuente de datos: SSA México — Datos Abiertos COVID-19 · Uso exclusivo académico · Dominio público
