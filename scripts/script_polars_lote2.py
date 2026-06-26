@@ -11,9 +11,9 @@ DATA_DIR   = Path("./data_lote2")
 BACKUP_DIR = Path("./data/backup_lote2")
 BACKUP_DIR.mkdir(exist_ok=True)
 
-DB    = "covid_mx_lote2"
-TABLE = "sonora"
-FULL  = f"{DB}.{TABLE}"
+DB_CATALOG    = "covid_mx_lote2"
+DB_NULLCAT    = "covid_mx_lote2_nullcatalog"
+TABLE         = "sonora"
 
 ARCHIVOS = [
     "COVID19MEXICO 2020.csv",
@@ -154,8 +154,40 @@ def polars_to_ch_type(dtype) -> str:
     if dtype == pl.Float64:                     return "Nullable(Float64)"
     return "Nullable(String)"
 
+
+def cargar_a_clickhouse(client, db: str, table: str, df: pl.DataFrame):
+    full = f"{db}.{table}"
+    client.command(f"CREATE DATABASE IF NOT EXISTS {db}")
+
+    table_exists = int(client.command(f"""
+        SELECT count() FROM system.tables
+        WHERE database = '{db}' AND name = '{table}'
+    """)) > 0
+
+    if table_exists:
+        row_count = int(client.command(f"SELECT count() FROM {full}"))
+        if row_count > 0:
+            print(f"  ⚠️  '{full}' ya tiene {row_count:,} filas → truncando...")
+            client.command(f"TRUNCATE TABLE {full}")
+
+    cols_ddl = ",\n  ".join(
+        f"`{col}` {polars_to_ch_type(dtype)}"
+        for col, dtype in zip(df.columns, df.dtypes)
+    )
+
+    client.command(f"""
+        CREATE TABLE IF NOT EXISTS {full} (
+          {cols_ddl}
+        ) ENGINE = MergeTree()
+        ORDER BY tuple()
+    """)
+
+    print(f"  ⬆️  Insertando {df.shape[0]:,} filas en {full}...")
+    client.insert_arrow(full, df.to_arrow())
+    print(f"  ✅ Listo — {full} cargada con {df.shape[0]:,} filas")
+
 # ─────────────────────────────────────────────
-# PASO 1 — CARGA Y TRANSFORMACIÓN
+# PASO 1 — CARGA CSV
 # ─────────────────────────────────────────────
 
 print("📂 Cargando archivos CSV...")
@@ -178,7 +210,11 @@ for archivo in ARCHIVOS:
     else:
         print(f"  ⚠️  No encontrado: {archivo}")
 
-covid_df  = pl.concat(dataframes, how="diagonal_relaxed").collect()
+covid_df = pl.concat(dataframes, how="diagonal_relaxed").collect()
+
+# ─────────────────────────────────────────────
+# PASO 2 — FILTRO SONORA
+# ─────────────────────────────────────────────
 
 print("\n🔍 Filtrando Sonora...")
 df_sonora_raw = (
@@ -188,32 +224,42 @@ df_sonora_raw = (
         (pl.col("ENTIDAD_NAC") == 26) |
         (pl.col("ENTIDAD_UM")  == 26)
     )
-    .unique()
+    .unique(subset=["ID_REGISTRO"])
 )
-
-print("🏷️  Aplicando catálogos...")
-df_sonora = aplicar_catalogos(df_sonora_raw)
-
-print(f"\n📊 Shape final: {df_sonora.shape[0]:,} filas × {df_sonora.shape[1]} cols")
+print(f"   {df_sonora_raw.shape[0]:,} filas encontradas")
 
 # ─────────────────────────────────────────────
-# PASO 2 — BACKUP CSV  (siempre, sin importar lo que decidas después)
+# PASO 3 — DOS VERSIONES DEL DATAFRAME
 # ─────────────────────────────────────────────
 
-ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
-csv_path = BACKUP_DIR / f"backup_sonora_{ts}.csv"
-print(f"\n💾 Guardando backup → {csv_path} ...")
-df_sonora.write_csv(csv_path)
-print(f"   ✅ Backup listo: {df_sonora.shape[0]:,} filas")
+print("\n🏷️  Aplicando catálogos...")
+df_con_catalogo  = aplicar_catalogos(df_sonora_raw.clone())
+df_sin_catalogo  = df_sonora_raw.clone()  # raw, sin tocar
 
 # ─────────────────────────────────────────────
-# PASO 3 — CONFIRMACIÓN ANTES DE TOCAR CLICKHOUSE
+# PASO 4 — BACKUP CSV
 # ─────────────────────────────────────────────
 
-print("\n" + "="*50)
-print(f"  Backup guardado en: {csv_path}")
-print(f"  Filas listas para cargar: {df_sonora.shape[0]:,}")
-print("="*50)
+ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+backup_cat    = BACKUP_DIR / f"backup_sonora_catalog_{ts}.csv"
+backup_nullcat = BACKUP_DIR / f"backup_sonora_nullcatalog_{ts}.csv"
+
+print(f"\n💾 Guardando backups...")
+df_con_catalogo.write_csv(backup_cat)
+df_sin_catalogo.write_csv(backup_nullcat)
+print(f"  ✅ {backup_cat}")
+print(f"  ✅ {backup_nullcat}")
+
+# ─────────────────────────────────────────────
+# PASO 5 — CONFIRMACIÓN
+# ─────────────────────────────────────────────
+
+print("\n" + "="*55)
+print(f"  Filas listas: {df_sonora_raw.shape[0]:,}")
+print(f"  Tablas a crear:")
+print(f"    → {DB_CATALOG}.{TABLE}   (con catálogos)")
+print(f"    → {DB_NULLCAT}.{TABLE}   (sin catálogos, raw)")
+print("="*55)
 
 while True:
     respuesta = input("\n¿Proceder con la carga a ClickHouse? [Y/N]: ").strip().upper()
@@ -222,11 +268,11 @@ while True:
     print("  ⚠️  Escribe Y o N")
 
 if respuesta == "N":
-    print("\n🔒 Carga cancelada. Backup conservado, ClickHouse no fue tocado.")
+    print("\n🔒 Carga cancelada. Backups conservados, ClickHouse no fue tocado.")
     raise SystemExit(0)
 
 # ─────────────────────────────────────────────
-# PASO 4 — CLICKHOUSE  (solo llega aquí si dijiste Y)
+# PASO 6 — CARGA A CLICKHOUSE
 # ─────────────────────────────────────────────
 
 print("\n🔌 Conectando a ClickHouse...")
@@ -235,31 +281,10 @@ client = clickhouse_connect.get_client(
     username="polars", password="Polars21"
 )
 
-client.command(f"CREATE DATABASE IF NOT EXISTS {DB}")
+print("\n📤 Cargando tablas...")
+cargar_a_clickhouse(client, DB_CATALOG, TABLE, df_con_catalogo)
+cargar_a_clickhouse(client, DB_NULLCAT, TABLE, df_sin_catalogo)
 
-table_exists = int(client.command(f"""
-    SELECT count() FROM system.tables
-    WHERE database = '{DB}' AND name = '{TABLE}'
-""")) > 0
-
-if table_exists:
-    row_count = int(client.command(f"SELECT count() FROM {FULL}"))
-    if row_count > 0:
-        print(f"⚠️  '{FULL}' ya tiene {row_count:,} filas → truncando...")
-        client.command(f"TRUNCATE TABLE {FULL}")
-
-cols_ddl = ",\n  ".join(
-    f"`{col}` {polars_to_ch_type(dtype)}"
-    for col, dtype in zip(df_sonora.columns, df_sonora.dtypes)
-)
-
-client.command(f"""
-    CREATE TABLE IF NOT EXISTS {FULL} (
-      {cols_ddl}
-    ) ENGINE = MergeTree()
-    ORDER BY tuple()
-""")
-
-print(f"⬆️  Insertando {df_sonora.shape[0]:,} filas en {FULL}...")
-client.insert_arrow(FULL, df_sonora.to_arrow())
-print(f"✅ Listo — {FULL} cargada con {df_sonora.shape[0]:,} filas")
+print("\n🎉 Todo listo:")
+print(f"  ✅ {DB_CATALOG}.{TABLE}  — {df_con_catalogo.shape[0]:,} filas con catálogos")
+print(f"  ✅ {DB_NULLCAT}.{TABLE}  — {df_sin_catalogo.shape[0]:,} filas sin catálogos")
